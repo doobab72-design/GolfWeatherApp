@@ -1,6 +1,5 @@
 package com.golfweather.presentation.ui.home
 
-import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,21 +20,28 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +51,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.golfweather.presentation.ui.components.GolfCourseSearchBar
 import com.golfweather.presentation.viewmodel.HomeViewModel
 import com.golfweather.presentation.viewmodel.SharedGolfCourseViewModel
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,10 +67,69 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
+    // DatePickerDialog 표시 여부
+    var showDatePicker by remember { mutableStateOf(false) }
+
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
             viewModel.clearError()
+        }
+    }
+
+    // ── Material3 DatePickerDialog ──────────────────────────────────────────
+    // 날짜 제한 없음: 과거 날짜만 비활성화, 미래는 모두 선택 가능.
+    // 기상청 예보 범위(단기 3일 / 중기 10일) 초과 시 안내 문구는
+    // WeatherScreen에서 처리하므로 여기서 UI 제한을 걸지 않음.
+    if (showDatePicker) {
+        val today = LocalDate.now()
+        val todayMillis = today.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+
+        // 초기 선택 날짜를 UTC 밀리초로 변환
+        val initialMillis = uiState.selectedDate
+            .atStartOfDay(ZoneId.of("UTC"))
+            .toInstant()
+            .toEpochMilli()
+
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = initialMillis,
+            selectableDates = object : SelectableDates {
+                // 오늘 이후(오늘 포함) 날짜만 선택 가능, 과거는 비활성화
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    utcTimeMillis >= todayMillis
+            }
+        )
+
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val selected = Instant.ofEpochMilli(millis)
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalDate()
+                            viewModel.onDateSelected(selected)
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("확인") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("취소") }
+            }
+        ) {
+            DatePicker(
+                state = datePickerState,
+                title = {
+                    Text(
+                        "티오프 날짜 선택",
+                        modifier = Modifier.padding(start = 24.dp, top = 16.dp)
+                    )
+                },
+                headline = null,
+                showModeToggle = false
+            )
         }
     }
 
@@ -137,21 +205,7 @@ fun HomeScreen(
             // 날짜 선택
             SectionCard(title = "티오프 날짜") {
                 OutlinedButton(
-                    onClick = {
-                        DatePickerDialog(
-                            context,
-                            { _, year, month, day ->
-                                viewModel.onDateSelected(java.time.LocalDate.of(year, month + 1, day))
-                            },
-                            uiState.selectedDate.year,
-                            uiState.selectedDate.monthValue - 1,
-                            uiState.selectedDate.dayOfMonth
-                        ).apply {
-                            datePicker.minDate = System.currentTimeMillis()
-                            datePicker.maxDate = System.currentTimeMillis() + 10L * 24 * 60 * 60 * 1000
-                            show()
-                        }
-                    },
+                    onClick = { showDatePicker = true },   // 다이얼로그 표시만
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.CalendarToday, contentDescription = null)
@@ -160,15 +214,12 @@ fun HomeScreen(
                         uiState.selectedDate.format(DateTimeFormatter.ofPattern("yyyy년 MM월 dd일 (E)"))
                     )
                 }
-
-                if (uiState.isDateOutOfRange) {
-                    Text(
-                        text = "10일 이후 날짜는 예보를 제공하지 않습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
+                Text(
+                    text = "오늘 이후 날짜를 자유롭게 선택할 수 있습니다",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
 
             // 시간 선택

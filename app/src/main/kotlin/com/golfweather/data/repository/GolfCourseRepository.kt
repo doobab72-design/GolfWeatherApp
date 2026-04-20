@@ -21,7 +21,13 @@ class GolfCourseRepository @Inject constructor(
     }
 
     /**
-     * 골프장 이름 검색 (DB 캐시 우선, 없으면 Google Places + 공공데이터 API)
+     * 골프장 이름 검색 (DB 캐시 우선, 없으면 Google Places textsearch → 공공데이터 API fallback)
+     *
+     * [버그 수정] autocomplete + getPlaceDetails(per-result) → textsearch 단일 호출
+     *  - 기존 2단계 호출(autocomplete → details)은 details 호출 하나가 실패하면
+     *    해당 결과 전체를 null로 버려 빈 목록 반환.
+     *  - textsearch는 한 번의 호출로 place_id, name, formatted_address, geometry를
+     *    모두 반환하므로 중간 실패 없이 안정적으로 결과를 받을 수 있음.
      */
     suspend fun searchGolfCourses(keyword: String): Result<List<GolfCourse>> =
         withContext(Dispatchers.IO) {
@@ -30,7 +36,7 @@ class GolfCourseRepository @Inject constructor(
                 val cached = dao.searchByName(keyword)
                 if (cached.isNotEmpty()) return@runCatching cached
 
-                // 2. Google Places Autocomplete
+                // 2. Google Places textsearch (단일 호출, 위도·경도 포함)
                 if (!ApiKeyValidator.isPlacesKeySet()) {
                     // Places API 키 미설정 시 공공데이터 API로 직접 시도
                     return@runCatching if (ApiKeyValidator.isPublicDataKeySet()) {
@@ -40,11 +46,15 @@ class GolfCourseRepository @Inject constructor(
                     }
                 }
 
-                val autocomplete = placesApi.getAutocompleteSuggestions(
-                    input = "$keyword 골프장"
+                val response = placesApi.searchPlaces(
+                    query = "$keyword 골프장",
+                    type = "golf_course",
+                    language = "ko",
+                    region = "kr"
                 )
-                // status가 OK가 아니거나 결과가 없으면 공공데이터 API fallback
-                if (autocomplete.status != "OK" || autocomplete.predictions.isEmpty()) {
+
+                // ZERO_RESULTS 또는 오류 시 공공데이터 API로 fallback
+                if (response.status != "OK" || response.results.isEmpty()) {
                     return@runCatching if (ApiKeyValidator.isPublicDataKeySet()) {
                         fetchFromPublicData(keyword)
                     } else {
@@ -52,16 +62,13 @@ class GolfCourseRepository @Inject constructor(
                     }
                 }
 
-                val courses = autocomplete.predictions.mapNotNull { prediction ->
-                    val details = runCatching {
-                        placesApi.getPlaceDetails(prediction.place_id)
-                    }.getOrNull()
-
-                    val location = details?.result?.geometry?.location ?: return@mapNotNull null
+                // textsearch 결과에 geometry가 없는 항목만 필터링 (정상 응답은 항상 포함)
+                val courses = response.results.mapNotNull { result ->
+                    val location = result.geometry?.location ?: return@mapNotNull null
                     GolfCourse(
-                        id = prediction.place_id,
-                        name = details.result?.name ?: prediction.structured_formatting?.main_text ?: "",
-                        address = details.result?.formatted_address ?: prediction.structured_formatting?.secondary_text ?: "",
+                        id = result.place_id,
+                        name = result.name,
+                        address = result.formatted_address ?: "",
                         latitude = location.lat,
                         longitude = location.lng
                     )
