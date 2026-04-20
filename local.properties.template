@@ -1,0 +1,26 @@
+# ============================================================
+# local.properties 템플릿
+#
+# 사용법:
+#   1. 이 파일을 복사하여 프로젝트 루트에 'local.properties' 로 저장
+#   2. 각 항목에 실제 API 키를 입력
+#   3. local.properties는 .gitignore에 의해 git에서 제외됨
+#
+# ⚠️  local.properties를 절대 git에 커밋하지 마세요!
+# ============================================================
+
+# 공공데이터포털 – 전국 골프장 현황 API
+# 발급: https://www.data.go.kr → "전국골프장현황" 검색 → 활용신청
+# 마이페이지 → 데이터활용 → 오픈API → 일반 인증키(Decoding) 사용
+PUBLIC_DATA_API_KEY=여기에_공공데이터포털_인증키_입력
+
+# Google Places API
+# 발급: https://console.cloud.google.com → 프로젝트 생성 → Places API 활성화 → 사용자 인증 정보 → API 키
+GOOGLE_PLACES_API_KEY=여기에_구글플레이스_API키_입력
+
+# 기상청 API허브
+# 발급: https://apihub.kma.go.kr → 회원가입 → 인증키 발급
+KMA_API_KEY=여기에_기상청API허브_인증키_입력
+
+# Android SDK 경로 (Android Studio 설치 시 자동 생성됨, 직접 입력 불필요)
+# sdk.dir=/Users/yourname/Library/Android/sdk
