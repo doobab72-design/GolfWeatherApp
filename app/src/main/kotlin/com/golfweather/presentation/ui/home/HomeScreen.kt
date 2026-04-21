@@ -1,6 +1,8 @@
 package com.golfweather.presentation.ui.home
 
 import android.app.TimePickerDialog
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GolfCourse
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.SnackbarHost
@@ -51,7 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.golfweather.presentation.ui.components.GolfCourseSearchBar
+import com.golfweather.presentation.ui.components.GolfCourseSearchSheet
 import com.golfweather.presentation.viewmodel.HomeViewModel
 import com.golfweather.presentation.viewmodel.SharedGolfCourseViewModel
 import java.time.Instant
@@ -69,10 +73,8 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
-
     var showDatePicker by remember { mutableStateOf(false) }
 
-    // 에러 메시지 스낵바 표시
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
@@ -80,21 +82,29 @@ fun HomeScreen(
         }
     }
 
-    // ── Material3 DatePickerDialog ────────────────────────────────────────
-    // 과거 날짜만 비활성화, 미래 날짜는 제한 없음
+    // ── 골프장 검색 BottomSheet ───────────────────────────────────────────────
+    if (uiState.showSearchSheet) {
+        GolfCourseSearchSheet(
+            query = uiState.searchQuery,
+            results = uiState.searchResults,
+            isSearching = uiState.isSearching,
+            onQueryChanged = viewModel::onSearchQueryChanged,
+            onCourseSelected = viewModel::onCourseSelected,
+            onDismiss = viewModel::closeSearchSheet
+        )
+    }
+
+    // ── 날짜 선택 다이얼로그 ──────────────────────────────────────────────────
     if (showDatePicker) {
         val today = LocalDate.now()
         val todayMillis = today.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
         val initialMillis = uiState.selectedDate
-            .atStartOfDay(ZoneId.of("UTC"))
-            .toInstant()
-            .toEpochMilli()
+            .atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
 
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = initialMillis,
             selectableDates = object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
-                    utcTimeMillis >= todayMillis
+                override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis >= todayMillis
             }
         )
 
@@ -104,8 +114,7 @@ fun HomeScreen(
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let { millis ->
                         val selected = Instant.ofEpochMilli(millis)
-                            .atZone(ZoneId.systemDefault())
-                            .toLocalDate()
+                            .atZone(ZoneId.systemDefault()).toLocalDate()
                         viewModel.onDateSelected(selected)
                     }
                     showDatePicker = false
@@ -160,22 +169,38 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // ── 골프장 선택 섹션 ────────────────────────────────────────────
+            // ── 골프장 선택 ──────────────────────────────────────────────────
             SectionCard(title = "골프장") {
                 val course = uiState.selectedCourse
+
                 if (course == null) {
-                    // 미선택 상태: 콤보박스 검색
-                    GolfCourseSearchBar(
-                        query = uiState.searchQuery,
-                        results = uiState.searchResults,
-                        isSearching = uiState.isSearching,
-                        isDropdownExpanded = uiState.isDropdownExpanded,
-                        onQueryChanged = viewModel::onSearchQueryChanged,
-                        onCourseSelected = viewModel::onCourseSelected,
-                        onDismiss = { viewModel.onDropdownExpandedChange(false) }
-                    )
+                    // 미선택: 팝업 검색 트리거 카드
+                    OutlinedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.openSearchSheet() },
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                "골프장을 검색하여 선택하세요",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 } else {
-                    // 선택된 상태: 코스 정보 + 변경 버튼
+                    // 선택됨: 코스 정보 카드 + 변경 버튼
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -214,8 +239,7 @@ fun HomeScreen(
                                     )
                                 }
                             }
-                            // 변경 버튼
-                            TextButton(onClick = { viewModel.clearSelectedCourse() }) {
+                            TextButton(onClick = { viewModel.openSearchSheet() }) {
                                 Icon(
                                     Icons.Default.Edit,
                                     contentDescription = null,
@@ -260,16 +284,14 @@ fun HomeScreen(
                             },
                             uiState.selectedTime.hour,
                             uiState.selectedTime.minute,
-                            true   // 24시간 형식
+                            true
                         ).show()
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.AccessTime, contentDescription = null)
                     Spacer(modifier = Modifier.padding(4.dp))
-                    Text(
-                        uiState.selectedTime.format(DateTimeFormatter.ofPattern("HH:mm"))
-                    )
+                    Text(uiState.selectedTime.format(DateTimeFormatter.ofPattern("HH:mm")))
                 }
                 Text(
                     text = "1분 단위로 입력 가능합니다",
