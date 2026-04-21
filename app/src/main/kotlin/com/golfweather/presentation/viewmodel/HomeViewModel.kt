@@ -29,7 +29,8 @@ data class HomeUiState(
     val selectedTime: LocalTime = LocalTime.of(7, 0),
     val isSearching: Boolean = false,
     val showSearchSheet: Boolean = false,
-    val errorMessage: String? = null
+    val searchError: String? = null,    // 검색 시트 안에 표시 (스낵바 대신)
+    val errorMessage: String? = null    // 날씨 조회 등 전역 오류용
 ) {
     val canProceed: Boolean
         get() = selectedCourse != null
@@ -65,7 +66,8 @@ class HomeViewModel @Inject constructor(
             it.copy(
                 showSearchSheet = true,
                 searchQuery = "",
-                searchResults = emptyList()
+                searchResults = emptyList(),
+                searchError = null
             )
         }
         _searchQuery.value = ""
@@ -141,21 +143,20 @@ class HomeViewModel @Inject constructor(
 
     private fun performSearch(query: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSearching = true) }
+            _uiState.update { it.copy(isSearching = true, searchError = null) }
             searchGolfCourseUseCase(query).fold(
                 onSuccess = { results ->
                     _uiState.update {
-                        it.copy(
-                            searchResults = results,
-                            isSearching = false
-                        )
+                        it.copy(searchResults = results, isSearching = false)
                     }
                 },
                 onFailure = { error ->
+                    android.util.Log.e("HomeViewModel", "검색 실패", error)
                     _uiState.update {
                         it.copy(
                             isSearching = false,
-                            errorMessage = error.message ?: "검색 중 오류가 발생했습니다."
+                            // 오류를 Sheet 안에 표시 (BottomSheet 뒤에 가려지는 스낵바 대신)
+                            searchError = error.message ?: "검색 중 오류가 발생했습니다."
                         )
                     }
                 }

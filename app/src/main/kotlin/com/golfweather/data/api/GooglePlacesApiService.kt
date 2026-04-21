@@ -14,7 +14,7 @@ import retrofit2.http.POST
  */
 interface GooglePlacesApiService {
 
-    @POST("places:searchText")
+    @POST("/v1/places:searchText")
     @Headers("X-Goog-FieldMask: places.id,places.displayName,places.formattedAddress,places.location")
     suspend fun searchText(
         @Header("X-Goog-Api-Key") apiKey: String,

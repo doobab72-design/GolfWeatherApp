@@ -50,7 +50,8 @@ fun GolfCourseSearchSheet(
     isSearching: Boolean,
     onQueryChanged: (String) -> Unit,
     onCourseSelected: (GolfCourse) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    searchError: String? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -99,6 +100,30 @@ fun GolfCourseSearchSheet(
 
             // 검색 상태별 콘텐츠
             when {
+                // API/네트워크 오류 — Sheet 안에서 직접 표시
+                searchError != null -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "검색 오류",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = searchError,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
                 // 검색어 짧음
                 query.length < 2 -> {
                     Box(

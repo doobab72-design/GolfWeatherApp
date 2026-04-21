@@ -88,6 +88,7 @@ fun HomeScreen(
             query = uiState.searchQuery,
             results = uiState.searchResults,
             isSearching = uiState.isSearching,
+            searchError = uiState.searchError,
             onQueryChanged = viewModel::onSearchQueryChanged,
             onCourseSelected = viewModel::onCourseSelected,
             onDismiss = viewModel::closeSearchSheet
