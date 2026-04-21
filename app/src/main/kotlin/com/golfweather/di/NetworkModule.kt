@@ -2,6 +2,7 @@ package com.golfweather.di
 
 import com.golfweather.data.api.GolfCourseApiService
 import com.golfweather.data.api.GooglePlacesApiService
+import com.golfweather.data.api.OpenMeteoApiService
 import com.golfweather.data.api.WeatherApiService
 import dagger.Module
 import dagger.Provides
@@ -27,9 +28,9 @@ object NetworkModule {
         }
         return OkHttpClient.Builder()
             .addInterceptor(logging)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)   // 연결 시도 최대 10초
+            .readTimeout(10, TimeUnit.SECONDS)       // 응답 수신 최대 10초
+            .writeTimeout(10, TimeUnit.SECONDS)
             .build()
     }
 
@@ -66,6 +67,16 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @Named("openMeteo")
+    fun provideOpenMeteoRetrofit(okHttpClient: OkHttpClient): Retrofit =
+        Retrofit.Builder()
+            .baseUrl("https://api.open-meteo.com/v1/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+
+    @Provides
+    @Singleton
     fun provideGolfCourseApiService(@Named("publicData") retrofit: Retrofit): GolfCourseApiService =
         retrofit.create(GolfCourseApiService::class.java)
 
@@ -78,4 +89,9 @@ object NetworkModule {
     @Singleton
     fun provideWeatherApiService(@Named("kma") retrofit: Retrofit): WeatherApiService =
         retrofit.create(WeatherApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideOpenMeteoApiService(@Named("openMeteo") retrofit: Retrofit): OpenMeteoApiService =
+        retrofit.create(OpenMeteoApiService::class.java)
 }

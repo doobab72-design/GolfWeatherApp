@@ -7,6 +7,7 @@ import com.golfweather.data.model.TeeOffSchedule
 import com.golfweather.data.model.WeatherForecast
 import com.golfweather.domain.usecase.GetWeatherForecastUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,21 +41,29 @@ class WeatherViewModel @Inject constructor(
     fun loadWeather(schedule: TeeOffSchedule) {
         viewModelScope.launch {
             _uiState.update { WeatherUiState.Loading }
+            try {
+                val result = getWeatherForecastUseCase(schedule)
+                _uiState.update {
+                    when (result) {
+                        is GetWeatherForecastUseCase.WeatherResult.ShortTerm ->
+                            WeatherUiState.ShortTermSuccess(schedule, result.hourlyForecasts)
 
-            val result = getWeatherForecastUseCase(schedule)
-            _uiState.update {
-                when (result) {
-                    is GetWeatherForecastUseCase.WeatherResult.ShortTerm ->
-                        WeatherUiState.ShortTermSuccess(schedule, result.hourlyForecasts)
+                        is GetWeatherForecastUseCase.WeatherResult.MidTerm ->
+                            WeatherUiState.MidTermSuccess(schedule, result.dailyForecast)
 
-                    is GetWeatherForecastUseCase.WeatherResult.MidTerm ->
-                        WeatherUiState.MidTermSuccess(schedule, result.dailyForecast)
+                        is GetWeatherForecastUseCase.WeatherResult.OutOfRange ->
+                            WeatherUiState.OutOfRange
 
-                    is GetWeatherForecastUseCase.WeatherResult.OutOfRange ->
-                        WeatherUiState.OutOfRange
-
-                    is GetWeatherForecastUseCase.WeatherResult.Error ->
-                        WeatherUiState.Error(result.message)
+                        is GetWeatherForecastUseCase.WeatherResult.Error ->
+                            WeatherUiState.Error(result.message)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e   // 코루틴 취소는 반드시 재전파
+            } catch (e: Exception) {
+                android.util.Log.e("WeatherViewModel", "loadWeather 예외", e)
+                _uiState.update {
+                    WeatherUiState.Error(e.message ?: "알 수 없는 오류가 발생했습니다.")
                 }
             }
         }
