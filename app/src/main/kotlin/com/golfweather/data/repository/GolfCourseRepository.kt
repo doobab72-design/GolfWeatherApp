@@ -1,5 +1,6 @@
 package com.golfweather.data.repository
 
+import android.util.Log
 import com.golfweather.data.api.GolfCourseApiService
 import com.golfweather.data.api.GooglePlacesApiService
 import com.golfweather.data.database.GolfCourseDao
@@ -17,66 +18,103 @@ class GolfCourseRepository @Inject constructor(
     private val dao: GolfCourseDao
 ) {
     companion object {
+        private const val TAG = "GolfCourseRepo"
         private const val CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000L // 7일
     }
 
     /**
-     * 골프장 이름 검색 (DB 캐시 우선, 없으면 Google Places textsearch → 공공데이터 API fallback)
+     * 골프장 이름 검색
+     *
+     * 우선순위:
+     *  1. Room DB 캐시 (7일 TTL)
+     *  2. Google Places textsearch (단일 호출 — type 필터 없음)
+     *  3. 공공데이터 API fallback
+     *
+     * [버그 수정] type=golf_course 필터 제거
+     *  - 한국 골프장 다수가 Google Places에 golf_course 태그가 없어 결과 0건
+     *  - query에 "골프장" 키워드를 포함시키는 것으로 충분히 필터링됨
      *
      * [버그 수정] autocomplete + getPlaceDetails(per-result) → textsearch 단일 호출
-     *  - 기존 2단계 호출(autocomplete → details)은 details 호출 하나가 실패하면
-     *    해당 결과 전체를 null로 버려 빈 목록 반환.
-     *  - textsearch는 한 번의 호출로 place_id, name, formatted_address, geometry를
-     *    모두 반환하므로 중간 실패 없이 안정적으로 결과를 받을 수 있음.
+     *  - details 개별 호출이 실패하면 결과 전체가 null 처리되던 문제 해결
      */
     suspend fun searchGolfCourses(keyword: String): Result<List<GolfCourse>> =
         withContext(Dispatchers.IO) {
             runCatching {
-                // 1. 로컬 DB 검색
+                // 1. 로컬 DB 캐시 검색
                 val cached = dao.searchByName(keyword)
-                if (cached.isNotEmpty()) return@runCatching cached
+                if (cached.isNotEmpty()) {
+                    Log.d(TAG, "캐시 히트: '$keyword' → ${cached.size}건")
+                    return@runCatching cached
+                }
 
-                // 2. Google Places textsearch (단일 호출, 위도·경도 포함)
+                // 2. Google Places textsearch
                 if (!ApiKeyValidator.isPlacesKeySet()) {
-                    // Places API 키 미설정 시 공공데이터 API로 직접 시도
+                    Log.w(TAG, "Places API 키 미설정 → 공공데이터 API fallback")
                     return@runCatching if (ApiKeyValidator.isPublicDataKeySet()) {
                         fetchFromPublicData(keyword)
                     } else {
-                        error("골프장 검색 API 키가 설정되지 않았습니다. app/build.gradle.kts를 확인하세요.")
+                        error("골프장 검색 API 키가 설정되지 않았습니다. local.properties를 확인하세요.")
                     }
                 }
+
+                val query = "$keyword 골프장"
+                Log.d(TAG, "Places textsearch 호출: query='$query'")
 
                 val response = placesApi.searchPlaces(
-                    query = "$keyword 골프장",
-                    type = "golf_course",
-                    language = "ko",
-                    region = "kr"
+                    query = query,
+                    language = "ko"
+                    // type, region 제거 — type=golf_course는 한국 골프장 상당수 누락시킴
                 )
 
-                // ZERO_RESULTS 또는 오류 시 공공데이터 API로 fallback
-                if (response.status != "OK" || response.results.isEmpty()) {
-                    return@runCatching if (ApiKeyValidator.isPublicDataKeySet()) {
-                        fetchFromPublicData(keyword)
-                    } else {
-                        emptyList()
+                Log.d(TAG, "Places 응답: status=${response.status}, 결과=${response.results.size}건")
+
+                when (response.status) {
+                    "OK" -> {
+                        val courses = response.results.mapNotNull { result ->
+                            val location = result.geometry?.location
+                            if (location == null) {
+                                Log.w(TAG, "geometry 누락, 건너뜀: ${result.name}")
+                                return@mapNotNull null
+                            }
+                            GolfCourse(
+                                id = result.place_id,
+                                name = result.name,
+                                address = result.formatted_address ?: "",
+                                latitude = location.lat,
+                                longitude = location.lng
+                            )
+                        }
+                        Log.d(TAG, "파싱 완료: ${courses.size}건")
+                        if (courses.isNotEmpty()) dao.insertAll(courses)
+                        courses
+                    }
+
+                    "ZERO_RESULTS" -> {
+                        Log.d(TAG, "결과 없음(ZERO_RESULTS) → 공공데이터 fallback 시도")
+                        if (ApiKeyValidator.isPublicDataKeySet()) fetchFromPublicData(keyword)
+                        else emptyList()
+                    }
+
+                    "REQUEST_DENIED" -> {
+                        Log.e(TAG, "REQUEST_DENIED: GCP에서 Places API 활성화 및 결제 설정 필요")
+                        error("Google Places API 오류(REQUEST_DENIED): GCP 콘솔에서 Places API 활성화 및 결제 설정을 확인하세요.")
+                    }
+
+                    "INVALID_REQUEST" -> {
+                        Log.e(TAG, "INVALID_REQUEST: 잘못된 요청 파라미터")
+                        error("Places API 오류(INVALID_REQUEST): 검색어를 확인하세요.")
+                    }
+
+                    else -> {
+                        Log.e(TAG, "알 수 없는 status: ${response.status}")
+                        if (ApiKeyValidator.isPublicDataKeySet()) {
+                            Log.d(TAG, "공공데이터 API fallback 시도")
+                            fetchFromPublicData(keyword)
+                        } else {
+                            error("Places API 오류: ${response.status}")
+                        }
                     }
                 }
-
-                // textsearch 결과에 geometry가 없는 항목만 필터링 (정상 응답은 항상 포함)
-                val courses = response.results.mapNotNull { result ->
-                    val location = result.geometry?.location ?: return@mapNotNull null
-                    GolfCourse(
-                        id = result.place_id,
-                        name = result.name,
-                        address = result.formatted_address ?: "",
-                        latitude = location.lat,
-                        longitude = location.lng
-                    )
-                }
-
-                // 3. DB 캐싱
-                if (courses.isNotEmpty()) dao.insertAll(courses)
-                courses
             }
         }
 
@@ -84,8 +122,9 @@ class GolfCourseRepository @Inject constructor(
      * 공공데이터 API에서 골프장 목록 조회
      */
     private suspend fun fetchFromPublicData(keyword: String): List<GolfCourse> {
+        Log.d(TAG, "공공데이터 API 호출: keyword='$keyword'")
         val response = publicDataApi.searchGolfCourse(keyword = keyword)
-        return response.data.mapNotNull { dto ->
+        val courses = response.data.mapNotNull { dto ->
             val lat = dto.위도?.toDoubleOrNull() ?: return@mapNotNull null
             val lng = dto.경도?.toDoubleOrNull() ?: return@mapNotNull null
             GolfCourse(
@@ -97,7 +136,10 @@ class GolfCourseRepository @Inject constructor(
                 holeCount = dto.홀수?.toIntOrNull() ?: 18,
                 phoneNumber = dto.전화번호 ?: ""
             )
-        }.also { if (it.isNotEmpty()) dao.insertAll(it) }
+        }
+        Log.d(TAG, "공공데이터 결과: ${courses.size}건")
+        if (courses.isNotEmpty()) dao.insertAll(courses)
+        return courses
     }
 
     /**

@@ -12,13 +12,14 @@ interface GooglePlacesApiService {
 
     /**
      * 텍스트 검색으로 골프장 후보 목록 획득
+     *
+     * [주의] type=golf_course 파라미터 제거 — 한국 골프장 상당수가 해당 태그 없어 결과 누락
+     * query에 "골프장" 키워드 포함으로 충분히 필터링
      */
     @GET("place/textsearch/json")
     suspend fun searchPlaces(
         @Query("query") query: String,
-        @Query("type") type: String = "golf_course",
         @Query("language") language: String = "ko",
-        @Query("region") region: String = "kr",
         @Query("key") apiKey: String = BuildConfig.GOOGLE_PLACES_API_KEY
     ): PlacesSearchResponse
 
