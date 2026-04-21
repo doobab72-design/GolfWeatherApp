@@ -53,7 +53,7 @@ class HomeViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
 
     init {
-        // 검색어 디바운스 처리 (300ms)
+        // 검색어 디바운스 처리 (300ms) — 빠른 타이핑에도 과도한 API 호출 방지
         _searchQuery
             .debounce(300)
             .distinctUntilChanged()
@@ -62,47 +62,62 @@ class HomeViewModel @Inject constructor(
             .launchIn(viewModelScope)
     }
 
+    // ── 드롭다운 제어 ──────────────────────────────────────────────────────────
+
+    fun onDropdownExpandedChange(expanded: Boolean) {
+        _uiState.update { it.copy(isDropdownExpanded = expanded) }
+    }
+
+    fun clearSelectedCourse() {
+        _uiState.update {
+            it.copy(
+                selectedCourse = null,
+                searchQuery = "",
+                searchResults = emptyList(),
+                isDropdownExpanded = false
+            )
+        }
+        _searchQuery.value = ""
+    }
+
+    // ── 검색 ─────────────────────────────────────────────────────────────────
+
     fun onSearchQueryChanged(query: String) {
         _uiState.update {
             it.copy(
                 searchQuery = query,
-                isDropdownExpanded = query.length >= 2,
-                selectedCourse = if (query.isEmpty()) null else it.selectedCourse
+                searchResults = if (query.length < 2) emptyList() else it.searchResults,
+                isDropdownExpanded = query.length >= 2
             )
         }
         _searchQuery.value = query
-
-        if (query.length < 2) {
-            _uiState.update { it.copy(searchResults = emptyList()) }
-        }
     }
+
+    // ── 선택 ─────────────────────────────────────────────────────────────────
 
     fun onCourseSelected(course: GolfCourse) {
         _uiState.update {
             it.copy(
                 selectedCourse = course,
-                searchQuery = course.name,
                 isDropdownExpanded = false,
+                searchQuery = "",
                 searchResults = emptyList()
             )
         }
     }
+
+    // ── 날짜·시간 ─────────────────────────────────────────────────────────────
 
     fun onDateSelected(date: LocalDate) {
         _uiState.update { it.copy(selectedDate = date) }
     }
 
     fun onTimeSelected(time: LocalTime) {
-        // 30분 단위로 스냅
-        val snappedMinute = if (time.minute >= 30) 30 else 0
-        _uiState.update {
-            it.copy(selectedTime = LocalTime.of(time.hour, snappedMinute))
-        }
+        // [수정] 30분 단위 스냅 제거 → 분 단위 그대로 저장
+        _uiState.update { it.copy(selectedTime = time) }
     }
 
-    fun dismissDropdown() {
-        _uiState.update { it.copy(isDropdownExpanded = false) }
-    }
+    // ── 공통 ─────────────────────────────────────────────────────────────────
 
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
@@ -118,6 +133,8 @@ class HomeViewModel @Inject constructor(
         )
     }
 
+    // ── 내부 ─────────────────────────────────────────────────────────────────
+
     private fun performSearch(query: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true) }
@@ -127,7 +144,7 @@ class HomeViewModel @Inject constructor(
                         it.copy(
                             searchResults = results,
                             isSearching = false,
-                            isDropdownExpanded = results.isNotEmpty()
+                            isDropdownExpanded = results.isNotEmpty() && it.searchQuery.length >= 2
                         )
                     }
                 },

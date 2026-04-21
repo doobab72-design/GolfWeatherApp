@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GolfCourse
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Button
@@ -67,9 +70,9 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    // DatePickerDialog 표시 여부
     var showDatePicker by remember { mutableStateOf(false) }
 
+    // 에러 메시지 스낵바 표시
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
@@ -77,15 +80,11 @@ fun HomeScreen(
         }
     }
 
-    // ── Material3 DatePickerDialog ──────────────────────────────────────────
-    // 날짜 제한 없음: 과거 날짜만 비활성화, 미래는 모두 선택 가능.
-    // 기상청 예보 범위(단기 3일 / 중기 10일) 초과 시 안내 문구는
-    // WeatherScreen에서 처리하므로 여기서 UI 제한을 걸지 않음.
+    // ── Material3 DatePickerDialog ────────────────────────────────────────
+    // 과거 날짜만 비활성화, 미래 날짜는 제한 없음
     if (showDatePicker) {
         val today = LocalDate.now()
         val todayMillis = today.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
-
-        // 초기 선택 날짜를 UTC 밀리초로 변환
         val initialMillis = uiState.selectedDate
             .atStartOfDay(ZoneId.of("UTC"))
             .toInstant()
@@ -94,7 +93,6 @@ fun HomeScreen(
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = initialMillis,
             selectableDates = object : SelectableDates {
-                // 오늘 이후(오늘 포함) 날짜만 선택 가능, 과거는 비활성화
                 override fun isSelectableDate(utcTimeMillis: Long): Boolean =
                     utcTimeMillis >= todayMillis
             }
@@ -103,17 +101,15 @@ fun HomeScreen(
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let { millis ->
-                            val selected = Instant.ofEpochMilli(millis)
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalDate()
-                            viewModel.onDateSelected(selected)
-                        }
-                        showDatePicker = false
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val selected = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneId.systemDefault())
+                            .toLocalDate()
+                        viewModel.onDateSelected(selected)
                     }
-                ) { Text("확인") }
+                    showDatePicker = false
+                }) { Text("확인") }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) { Text("취소") }
@@ -163,49 +159,80 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 골프장 검색바
-            GolfCourseSearchBar(
-                query = uiState.searchQuery,
-                results = uiState.searchResults,
-                isSearching = uiState.isSearching,
-                isDropdownExpanded = uiState.isDropdownExpanded,
-                onQueryChanged = viewModel::onSearchQueryChanged,
-                onCourseSelected = viewModel::onCourseSelected,
-                onDismiss = viewModel::dismissDropdown
-            )
 
-            // 선택된 골프장 정보 카드
-            uiState.selectedCourse?.let { course ->
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+            // ── 골프장 선택 섹션 ────────────────────────────────────────────
+            SectionCard(title = "골프장") {
+                val course = uiState.selectedCourse
+                if (course == null) {
+                    // 미선택 상태: 콤보박스 검색
+                    GolfCourseSearchBar(
+                        query = uiState.searchQuery,
+                        results = uiState.searchResults,
+                        isSearching = uiState.isSearching,
+                        isDropdownExpanded = uiState.isDropdownExpanded,
+                        onQueryChanged = viewModel::onSearchQueryChanged,
+                        onCourseSelected = viewModel::onCourseSelected,
+                        onDismiss = { viewModel.onDropdownExpandedChange(false) }
                     )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = course.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = course.address,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (course.holeCount > 0) {
-                            Text(
-                                text = "${course.holeCount}홀",
-                                style = MaterialTheme.typography.bodySmall
+                } else {
+                    // 선택된 상태: 코스 정보 + 변경 버튼
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.GolfCourse,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
                             )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = course.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (course.address.isNotEmpty()) {
+                                    Text(
+                                        text = course.address,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (course.holeCount > 0) {
+                                    Text(
+                                        text = "${course.holeCount}홀",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            // 변경 버튼
+                            TextButton(onClick = { viewModel.clearSelectedCourse() }) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("변경")
+                            }
                         }
                     }
                 }
             }
 
-            // 날짜 선택
+            // ── 날짜 선택 ────────────────────────────────────────────────────
             SectionCard(title = "티오프 날짜") {
                 OutlinedButton(
-                    onClick = { showDatePicker = true },   // 다이얼로그 표시만
+                    onClick = { showDatePicker = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.CalendarToday, contentDescription = null)
@@ -222,7 +249,7 @@ fun HomeScreen(
                 )
             }
 
-            // 시간 선택
+            // ── 시간 선택 ────────────────────────────────────────────────────
             SectionCard(title = "티오프 시간") {
                 OutlinedButton(
                     onClick = {
@@ -233,7 +260,7 @@ fun HomeScreen(
                             },
                             uiState.selectedTime.hour,
                             uiState.selectedTime.minute,
-                            true
+                            true   // 24시간 형식
                         ).show()
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -245,14 +272,14 @@ fun HomeScreen(
                     )
                 }
                 Text(
-                    text = "30분 단위로 자동 조정됩니다",
+                    text = "1분 단위로 입력 가능합니다",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
 
-            // 날씨 확인 버튼
+            // ── 날씨 확인 버튼 ───────────────────────────────────────────────
             Button(
                 onClick = {
                     val schedule = viewModel.buildTeeOffSchedule() ?: return@Button
