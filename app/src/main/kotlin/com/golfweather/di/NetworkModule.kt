@@ -48,7 +48,8 @@ object NetworkModule {
     @Named("googlePlaces")
     fun provideGooglePlacesRetrofit(okHttpClient: OkHttpClient): Retrofit =
         Retrofit.Builder()
-            .baseUrl("https://maps.googleapis.com/maps/api/")
+            // Places API (New) 엔드포인트 — 레거시(maps.googleapis.com)는 비활성화됨
+            .baseUrl("https://places.googleapis.com/v1/")
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()

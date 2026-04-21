@@ -1,99 +1,53 @@
 package com.golfweather.data.api
 
-import com.golfweather.BuildConfig
-import retrofit2.http.GET
-import retrofit2.http.Query
+import retrofit2.http.Body
+import retrofit2.http.Header
+import retrofit2.http.Headers
+import retrofit2.http.POST
 
 /**
- * Google Places API – 골프장 텍스트 검색
- * Base URL: https://maps.googleapis.com/maps/api/
+ * Google Places API (New)
+ * Base URL: https://places.googleapis.com/v1/
+ *
+ * 레거시 Places API(maps.googleapis.com)는 프로젝트에서 비활성화됨(REQUEST_DENIED).
+ * Places API (New)는 활성화되어 있어 정상 동작.
  */
 interface GooglePlacesApiService {
 
-    /**
-     * 텍스트 검색으로 골프장 후보 목록 획득
-     *
-     * [주의] type=golf_course 파라미터 제거 — 한국 골프장 상당수가 해당 태그 없어 결과 누락
-     * query에 "골프장" 키워드 포함으로 충분히 필터링
-     */
-    @GET("place/textsearch/json")
-    suspend fun searchPlaces(
-        @Query("query") query: String,
-        @Query("language") language: String = "ko",
-        @Query("key") apiKey: String = BuildConfig.GOOGLE_PLACES_API_KEY
-    ): PlacesSearchResponse
-
-    /**
-     * Place Autocomplete – 실시간 자동완성
-     */
-    @GET("place/autocomplete/json")
-    suspend fun getAutocompleteSuggestions(
-        @Query("input") input: String,
-        @Query("types") types: String = "establishment",
-        @Query("components") components: String = "country:kr",
-        @Query("language") language: String = "ko",
-        @Query("key") apiKey: String = BuildConfig.GOOGLE_PLACES_API_KEY
-    ): PlacesAutocompleteResponse
-
-    /**
-     * Place Details – Place ID로 위도/경도 획득
-     */
-    @GET("place/details/json")
-    suspend fun getPlaceDetails(
-        @Query("place_id") placeId: String,
-        @Query("fields") fields: String = "name,geometry,formatted_address",
-        @Query("language") language: String = "ko",
-        @Query("key") apiKey: String = BuildConfig.GOOGLE_PLACES_API_KEY
-    ): PlaceDetailsResponse
+    @POST("places:searchText")
+    @Headers("X-Goog-FieldMask: places.id,places.displayName,places.formattedAddress,places.location")
+    suspend fun searchText(
+        @Header("X-Goog-Api-Key") apiKey: String,
+        @Body request: PlacesTextSearchRequest
+    ): PlacesTextSearchResponse
 }
 
-// --- Response DTOs ---
+// Request
 
-data class PlacesSearchResponse(
-    val results: List<PlaceResult>,
-    val status: String,
-    val next_page_token: String?
+data class PlacesTextSearchRequest(
+    val textQuery: String,
+    val languageCode: String = "ko"
 )
 
-data class PlacesAutocompleteResponse(
-    val predictions: List<AutocompletePrediction>,
-    val status: String
+// Response
+
+data class PlacesTextSearchResponse(
+    val places: List<PlaceNew> = emptyList()
 )
 
-data class AutocompletePrediction(
-    val place_id: String,
-    val description: String,
-    val structured_formatting: StructuredFormatting?
+data class PlaceNew(
+    val id: String,
+    val displayName: DisplayName?,
+    val formattedAddress: String?,
+    val location: LatLngNew?
 )
 
-data class StructuredFormatting(
-    val main_text: String,
-    val secondary_text: String?
+data class DisplayName(
+    val text: String,
+    val languageCode: String?
 )
 
-data class PlaceDetailsResponse(
-    val result: PlaceDetailResult?,
-    val status: String
-)
-
-data class PlaceDetailResult(
-    val name: String,
-    val formatted_address: String?,
-    val geometry: PlaceGeometry?
-)
-
-data class PlaceResult(
-    val place_id: String,
-    val name: String,
-    val formatted_address: String?,
-    val geometry: PlaceGeometry?
-)
-
-data class PlaceGeometry(
-    val location: PlaceLocation
-)
-
-data class PlaceLocation(
-    val lat: Double,
-    val lng: Double
+data class LatLngNew(
+    val latitude: Double,
+    val longitude: Double
 )
