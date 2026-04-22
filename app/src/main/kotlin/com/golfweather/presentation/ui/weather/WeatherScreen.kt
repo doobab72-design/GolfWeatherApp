@@ -1,8 +1,11 @@
 package com.golfweather.presentation.ui.weather
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,11 +26,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.EventBusy
-import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.WaterDrop
@@ -52,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -65,22 +68,20 @@ import com.golfweather.presentation.ui.components.HourlyWeatherCard
 import com.golfweather.presentation.viewmodel.SharedGolfCourseViewModel
 import com.golfweather.presentation.viewmodel.WeatherUiState
 import com.golfweather.presentation.viewmodel.WeatherViewModel
-import com.golfweather.util.WindDirectionConverter
 import java.time.format.DateTimeFormatter
 
 // ── 하늘상태 → 배경 그라디언트 ────────────────────────────────────────────
 private fun skyGradient(sky: SkyCondition): Brush = Brush.linearGradient(
     when (sky) {
-        SkyCondition.CLEAR        -> listOf(Color(0xFF0288D1), Color(0xFF0277BD), Color(0xFF01579B))
+        SkyCondition.CLEAR         -> listOf(Color(0xFF1B5E20), Color(0xFF2E7D32), Color(0xFF1565C0))
         SkyCondition.PARTLY_CLOUDY -> listOf(Color(0xFF0288D1), Color(0xFF546E7A), Color(0xFF37474F))
-        SkyCondition.CLOUDY       -> listOf(Color(0xFF546E7A), Color(0xFF455A64), Color(0xFF37474F))
-        SkyCondition.RAIN         -> listOf(Color(0xFF1A237E), Color(0xFF1565C0), Color(0xFF0D47A1))
-        SkyCondition.SNOW         -> listOf(Color(0xFF90CAF9), Color(0xFF5C8FD6), Color(0xFF1565C0))
-        SkyCondition.RAIN_SNOW    -> listOf(Color(0xFF1565C0), Color(0xFF7986CB), Color(0xFF3949AB))
+        SkyCondition.CLOUDY        -> listOf(Color(0xFF546E7A), Color(0xFF455A64), Color(0xFF37474F))
+        SkyCondition.RAIN          -> listOf(Color(0xFF1A237E), Color(0xFF1565C0), Color(0xFF0D47A1))
+        SkyCondition.SNOW          -> listOf(Color(0xFF90CAF9), Color(0xFF5C8FD6), Color(0xFF1565C0))
+        SkyCondition.RAIN_SNOW     -> listOf(Color(0xFF1565C0), Color(0xFF7986CB), Color(0xFF3949AB))
     }
 )
 
-// ── 하늘상태 → 이모지 ──────────────────────────────────────────────────────
 private fun SkyCondition.toEmoji(): String = when (this) {
     SkyCondition.CLEAR         -> "☀️"
     SkyCondition.PARTLY_CLOUDY -> "⛅"
@@ -90,7 +91,6 @@ private fun SkyCondition.toEmoji(): String = when (this) {
     SkyCondition.RAIN_SNOW     -> "🌨️"
 }
 
-// ── 라운드 적합도 → 색상 ─────────────────────────────────────────────────
 private fun scoreColor(score: Int): Color = when {
     score >= 90 -> Color(0xFF1B5E20)
     score >= 75 -> Color(0xFF2E7D32)
@@ -99,7 +99,6 @@ private fun scoreColor(score: Int): Color = when {
     else        -> Color(0xFFC62828)
 }
 
-// ── 라운드 적합도 → 라벨 ────────────────────────────────────────────────
 private fun scoreLabel(score: Int): String = when {
     score >= 90 -> "완벽한 라운드 ⛳"
     score >= 75 -> "좋은 날씨 😊"
@@ -121,6 +120,8 @@ fun WeatherScreen(
         schedule?.let { viewModel.loadWeather(it) }
     }
 
+    val onRefresh: () -> Unit = { schedule?.let { viewModel.retry(it) } }
+
     when (val state = uiState) {
         is WeatherUiState.Idle    -> LoadingOverlay(onBack)
         is WeatherUiState.Loading -> LoadingOverlay(onBack)
@@ -130,15 +131,18 @@ fun WeatherScreen(
                 schedule  = state.schedule,
                 forecasts = state.hourlyForecasts,
                 score     = state.suitabilityScore,
-                onBack    = onBack
+                onBack    = onBack,
+                onRefresh = onRefresh
             )
 
         is WeatherUiState.MidTermSuccess ->
             MidTermWeatherContent(
-                schedule = state.schedule,
-                forecast = state.dayForecast,
-                score    = state.suitabilityScore,
-                onBack   = onBack
+                schedule  = state.schedule,
+                forecast  = state.dayForecast,
+                forecasts = state.hourlyForecasts,
+                score     = state.suitabilityScore,
+                onBack    = onBack,
+                onRefresh = onRefresh
             )
 
         is WeatherUiState.OutOfRange ->
@@ -148,7 +152,7 @@ fun WeatherScreen(
             ErrorContent(
                 message = state.message,
                 onBack  = onBack,
-                onRetry = { schedule?.let { viewModel.retry(it) } }
+                onRetry = onRefresh
             )
     }
 }
@@ -163,9 +167,7 @@ private fun LoadingOverlay(onBack: () -> Unit) {
     ) {
         IconButton(
             onClick  = onBack,
-            modifier = Modifier
-                .padding(12.dp)
-                .align(Alignment.TopStart)
+            modifier = Modifier.padding(12.dp).align(Alignment.TopStart)
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
         }
@@ -186,12 +188,14 @@ private fun ShortTermWeatherContent(
     schedule  : TeeOffSchedule,
     forecasts : List<WeatherForecast>,
     score     : Int,
-    onBack    : () -> Unit
+    onBack    : () -> Unit,
+    onRefresh : () -> Unit
 ) {
-    val dominantSky = forecasts.maxByOrNull { 1 }?.skyCondition ?: SkyCondition.CLEAR
-    val avgTemp     = if (forecasts.isEmpty()) 0f
-                      else forecasts.map { it.temperature }.average().toFloat()
-    val dateFmt     = DateTimeFormatter.ofPattern("MM/dd (E)")
+    val dominantSky = forecasts.groupBy { it.skyCondition }
+        .maxByOrNull { it.value.size }?.key ?: SkyCondition.CLEAR
+    val avgTemp = if (forecasts.isEmpty()) 0f
+                  else forecasts.map { it.temperature }.average().toFloat()
+    val dateFmt = DateTimeFormatter.ofPattern("MM/dd (E)")
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -203,30 +207,35 @@ private fun ShortTermWeatherContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(280.dp)
+                    .height(290.dp)
                     .background(skyGradient(dominantSky))
             ) {
-                // 뒤로가기
-                IconButton(
-                    onClick  = onBack,
-                    modifier = Modifier.padding(top = 8.dp, start = 4.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White)
-                }
-
-                // 장식 원
                 Box(
                     modifier = Modifier
-                        .size(200.dp)
+                        .size(220.dp)
                         .align(Alignment.TopEnd)
-                        .offset(x = 50.dp, y = (-40).dp)
+                        .offset(x = 60.dp, y = (-50).dp)
                         .background(
-                            Brush.radialGradient(
-                                listOf(Color.White.copy(alpha = 0.08f), Color.Transparent)
-                            ),
+                            Brush.radialGradient(listOf(Color.White.copy(alpha = 0.08f), Color.Transparent)),
                             CircleShape
                         )
                 )
+
+                // 상단 바 (뒤로가기 + 새로고침)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, start = 4.dp, end = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White)
+                    }
+                    IconButton(onClick = onRefresh) {
+                        Icon(Icons.Default.Refresh, "새로고침", tint = Color.White)
+                    }
+                }
 
                 Column(
                     modifier = Modifier
@@ -234,18 +243,18 @@ private fun ShortTermWeatherContent(
                         .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(dominantSky.toEmoji(), fontSize = 56.sp)
+                    Text(dominantSky.toEmoji(), fontSize = 60.sp)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "${avgTemp.toInt()}°C",
                         color      = Color.White,
-                        fontSize   = 64.sp,
+                        fontSize   = 68.sp,
                         fontWeight = FontWeight.Thin
                     )
                     Text(
                         dominantSky.label,
                         color    = Color.White.copy(alpha = 0.85f),
-                        fontSize = 16.sp
+                        fontSize = 17.sp
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -253,14 +262,17 @@ private fun ShortTermWeatherContent(
                         color    = Color.White.copy(alpha = 0.70f),
                         fontSize = 13.sp
                     )
+                    Text(
+                        "티오프 ${schedule.time} ~ ${schedule.estimatedEndTime}",
+                        color    = Color.White.copy(alpha = 0.60f),
+                        fontSize = 12.sp
+                    )
                 }
             }
 
             // ── 바디 ─────────────────────────────────────────────────────────
             Surface(
-                modifier        = Modifier
-                    .fillMaxWidth()
-                    .offset(y = (-24).dp),
+                modifier        = Modifier.fillMaxWidth().offset(y = (-24).dp),
                 shape           = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                 color           = MaterialTheme.colorScheme.background,
                 shadowElevation = 8.dp
@@ -271,16 +283,16 @@ private fun ShortTermWeatherContent(
                         .padding(top = 24.dp, start = 20.dp, end = 20.dp, bottom = 40.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    // 단기 배지
+                    // 배지
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = Color(0xFF0288D1).copy(alpha = 0.12f)
+                        color = Color(0xFF1B5E20).copy(alpha = 0.10f)
                     ) {
                         Text(
                             "📅 단기예보 (3일 이내)",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                            fontSize  = 12.sp,
-                            color     = Color(0xFF0277BD),
+                            modifier   = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                            fontSize   = 12.sp,
+                            color      = Color(0xFF1B5E20),
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -288,12 +300,12 @@ private fun ShortTermWeatherContent(
                     // 라운드 적합도
                     SuitabilityScoreCard(score = score)
 
-                    // 시간별 예보
+                    // 시간별 예보 (가로 스크롤)
                     if (forecasts.isNotEmpty()) {
-                        SectionTitle("시간별 예보")
+                        SectionTitle("⏱ 시간별 예보")
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding        = PaddingValues(horizontal = 0.dp)
+                            contentPadding        = PaddingValues(horizontal = 2.dp)
                         ) {
                             items(forecasts) { forecast ->
                                 HourlyWeatherCard(forecast = forecast)
@@ -302,31 +314,24 @@ private fun ShortTermWeatherContent(
                     } else {
                         Text(
                             "해당 시간대 예보 데이터가 없습니다.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style     = MaterialTheme.typography.bodyMedium,
+                            color     = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp)
+                            modifier  = Modifier.fillMaxWidth().padding(vertical = 16.dp)
                         )
                     }
 
-                    // 날씨 상세 정보
+                    // 날씨 상세
                     if (forecasts.isNotEmpty()) {
-                        SectionTitle("라운드 상세 정보")
-                        val first = forecasts.first()
-                        WeatherDetailGrid(
-                            windSpeed = first.windSpeed,
-                            windDir   = first.windDirection,
-                            humidity  = first.humidity,
-                            rain      = first.precipitationProbability,
-                            teeTime   = "${schedule.time} ~ ${schedule.estimatedEndTime}"
-                        )
+                        SectionTitle("📊 상세 정보")
+                        WeatherDetailGrid(forecasts = forecasts, teeTime = "${schedule.time} ~ ${schedule.estimatedEndTime}")
                     }
+
+                    // 기상청 날씨 레이더
+                    SectionTitle("📡 기상청 날씨 레이더")
+                    RadarLinkCard()
                 }
             }
-            // offset(-24dp) 보정
-            Spacer(Modifier.height(0.dp))
         }
     }
 }
@@ -334,10 +339,12 @@ private fun ShortTermWeatherContent(
 // ── 중기 예보 화면 ────────────────────────────────────────────────────────────
 @Composable
 private fun MidTermWeatherContent(
-    schedule : TeeOffSchedule,
-    forecast : MidTermForecast?,
-    score    : Int,
-    onBack   : () -> Unit
+    schedule  : TeeOffSchedule,
+    forecast  : MidTermForecast?,
+    forecasts : List<WeatherForecast>,
+    score     : Int,
+    onBack    : () -> Unit,
+    onRefresh : () -> Unit
 ) {
     val sky     = forecast?.skyConditionAm ?: SkyCondition.CLOUDY
     val dateFmt = DateTimeFormatter.ofPattern("MM/dd (E)")
@@ -352,27 +359,35 @@ private fun MidTermWeatherContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(280.dp)
+                    .height(290.dp)
                     .background(skyGradient(sky))
             ) {
-                IconButton(
-                    onClick  = onBack,
-                    modifier = Modifier.padding(top = 8.dp, start = 4.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White)
-                }
                 Box(
                     modifier = Modifier
-                        .size(180.dp)
+                        .size(200.dp)
                         .align(Alignment.TopEnd)
-                        .offset(x = 50.dp, y = (-40).dp)
+                        .offset(x = 60.dp, y = (-50).dp)
                         .background(
-                            Brush.radialGradient(
-                                listOf(Color.White.copy(alpha = 0.08f), Color.Transparent)
-                            ),
+                            Brush.radialGradient(listOf(Color.White.copy(alpha = 0.08f), Color.Transparent)),
                             CircleShape
                         )
                 )
+
+                // 상단 바 (뒤로가기 + 새로고침)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, start = 4.dp, end = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White)
+                    }
+                    IconButton(onClick = onRefresh) {
+                        Icon(Icons.Default.Refresh, "새로고침", tint = Color.White)
+                    }
+                }
 
                 Column(
                     modifier = Modifier
@@ -380,38 +395,33 @@ private fun MidTermWeatherContent(
                         .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(sky.toEmoji(), fontSize = 56.sp)
+                    Text(sky.toEmoji(), fontSize = 60.sp)
                     Spacer(Modifier.height(4.dp))
-
                     val tempText = forecast?.let {
                         "${it.minTemperature.toInt()}° / ${it.maxTemperature.toInt()}°C"
                     } ?: "-- / --°C"
-
                     Text(
                         tempText,
                         color      = Color.White,
                         fontSize   = 40.sp,
                         fontWeight = FontWeight.Light
                     )
-                    Text(
-                        sky.label,
-                        color    = Color.White.copy(alpha = 0.85f),
-                        fontSize = 16.sp
-                    )
+                    Text(sky.label, color = Color.White.copy(alpha = 0.85f), fontSize = 17.sp)
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "${schedule.golfCourse.name}  ·  ${schedule.date.format(dateFmt)}",
-                        color    = Color.White.copy(alpha = 0.70f),
-                        fontSize = 13.sp
+                        color = Color.White.copy(alpha = 0.70f), fontSize = 13.sp
+                    )
+                    Text(
+                        "티오프 ${schedule.time} ~ ${schedule.estimatedEndTime}",
+                        color = Color.White.copy(alpha = 0.60f), fontSize = 12.sp
                     )
                 }
             }
 
             // ── 바디 ─────────────────────────────────────────────────────────
             Surface(
-                modifier        = Modifier
-                    .fillMaxWidth()
-                    .offset(y = (-24).dp),
+                modifier        = Modifier.fillMaxWidth().offset(y = (-24).dp),
                 shape           = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                 color           = MaterialTheme.colorScheme.background,
                 shadowElevation = 8.dp
@@ -428,64 +438,46 @@ private fun MidTermWeatherContent(
                     ) {
                         Text(
                             "🗓 중기예보 (4~10일)",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                            fontSize  = 12.sp,
-                            color     = Color(0xFF37474F),
+                            modifier   = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                            fontSize   = 12.sp,
+                            color      = Color(0xFF37474F),
                             fontWeight = FontWeight.SemiBold
                         )
                     }
 
-                    // 라운드 적합도
                     SuitabilityScoreCard(score = score)
 
-                    // 오전 / 오후 예보
-                    if (forecast != null) {
-                        SectionTitle("오전 / 오후 예보")
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    // 시간별 예보 (가로 스크롤) — 단기와 동일
+                    if (forecasts.isNotEmpty()) {
+                        SectionTitle("⏱ 시간별 예보")
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding        = PaddingValues(horizontal = 2.dp)
                         ) {
-                            MidTermHalfCard(
-                                modifier  = Modifier.weight(1f),
-                                label     = "오전",
-                                emoji     = forecast.skyConditionAm.toEmoji(),
-                                sky       = forecast.skyConditionAm.label,
-                                rain      = forecast.precipProbAm
-                            )
-                            MidTermHalfCard(
-                                modifier  = Modifier.weight(1f),
-                                label     = "오후",
-                                emoji     = forecast.skyConditionPm.toEmoji(),
-                                sky       = forecast.skyConditionPm.label,
-                                rain      = forecast.precipProbPm
-                            )
+                            items(forecasts) { forecast ->
+                                HourlyWeatherCard(forecast = forecast)
+                            }
                         }
+                    }
 
-                        // 기온 카드
-                        SectionTitle("기온 범위")
+                    if (forecast != null) {
+                        SectionTitle("🌡 기온 범위")
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape    = RoundedCornerShape(16.dp),
-                            colors   = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ),
+                            modifier  = Modifier.fillMaxWidth(),
+                            shape     = RoundedCornerShape(16.dp),
+                            colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             elevation = CardDefaults.cardElevation(2.dp)
                         ) {
                             Row(
                                 modifier = Modifier.padding(20.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    Icons.Default.Thermostat,
-                                    null,
-                                    tint     = Color(0xFFE57373),
-                                    modifier = Modifier.size(28.dp)
-                                )
+                                Icon(Icons.Default.Thermostat, null, tint = Color(0xFFE57373), modifier = Modifier.size(28.dp))
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text(
                                         "${forecast.minTemperature.toInt()}°C  ~  ${forecast.maxTemperature.toInt()}°C",
-                                        fontSize   = 22.sp,
+                                        fontSize   = 24.sp,
                                         fontWeight = FontWeight.Bold,
                                         color      = MaterialTheme.colorScheme.onSurface
                                     )
@@ -497,79 +489,100 @@ private fun MidTermWeatherContent(
                                 }
                             }
                         }
+
+                        SectionTitle("☔ 강수 정보")
+                        Card(
+                            modifier  = Modifier.fillMaxWidth(),
+                            shape     = RoundedCornerShape(16.dp),
+                            colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(2.dp)
+                        ) {
+                            val maxPop = maxOf(forecast.precipProbAm, forecast.precipProbPm)
+                            Row(
+                                modifier = Modifier.padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.WaterDrop, null, tint = Color(0xFF42A5F5), modifier = Modifier.size(28.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        "${maxPop}%",
+                                        fontSize   = 24.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color      = if (maxPop >= 40) Color(0xFF1565C0) else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        if (maxPop < 20) "우산 불필요"
+                                        else if (maxPop < 40) "우산 챙기면 좋아요"
+                                        else "우산 필수",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
+
+                    // 기상청 날씨 레이더
+                    SectionTitle("📡 기상청 날씨 레이더")
+                    RadarLinkCard()
                 }
             }
-            Spacer(Modifier.height(0.dp))
         }
     }
 }
 
-// ── 라운드 적합도 카드 ────────────────────────────────────────────────────────
+// ── 기상청 날씨 레이더 링크 카드 ─────────────────────────────────────────────
 @Composable
-private fun SuitabilityScoreCard(score: Int) {
-    val color     = scoreColor(score)
-    val label     = scoreLabel(score)
-    val animScore by animateFloatAsState(
-        targetValue = score / 100f,
-        animationSpec = tween(800),
-        label = "score"
-    )
-
+private fun RadarLinkCard() {
+    val context = LocalContext.current
     Card(
-        modifier  = Modifier.fillMaxWidth(),
+        modifier  = Modifier
+            .fillMaxWidth()
+            .clickable {
+                val intent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://www.weather.go.kr/w/weather/radar/radar.do")
+                )
+                context.startActivity(intent)
+            },
         shape     = RoundedCornerShape(16.dp),
-        colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(2.dp)
+        colors    = CardDefaults.cardColors(
+            containerColor = Color(0xFF1565C0).copy(alpha = 0.06f)
+        ),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color(0xFF1565C0).copy(alpha = 0.12f), CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Column {
-                    Text(
-                        "라운드 적합도",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        label,
-                        fontSize   = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color      = color
-                    )
-                }
-                // 점수 서클
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(color.copy(alpha = 0.12f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "$score",
-                        fontSize   = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color      = color
-                    )
-                }
+                Text("📡", fontSize = 22.sp)
             }
-            // 진행 바
-            LinearProgressIndicator(
-                progress          = { animScore },
-                modifier          = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color             = color,
-                trackColor        = color.copy(alpha = 0.15f),
-                strokeCap         = StrokeCap.Round
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "기상청 날씨 레이더",
+                    fontSize   = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = Color(0xFF1565C0)
+                )
+                Text(
+                    "실시간 레이더 영상 · 강수 위치 확인",
+                    fontSize = 12.sp,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = "외부 링크",
+                tint     = Color(0xFF1565C0).copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp)
             )
         }
     }
@@ -578,13 +591,13 @@ private fun SuitabilityScoreCard(score: Int) {
 // ── 날씨 상세 그리드 ──────────────────────────────────────────────────────────
 @Composable
 private fun WeatherDetailGrid(
-    windSpeed : Float,
-    windDir   : Int,
-    humidity  : Int,
-    rain      : Int,
+    forecasts : List<WeatherForecast>,
     teeTime   : String
 ) {
-    val dirKor = WindDirectionConverter.toKorean(windDir)
+    val avgTemp = forecasts.map { it.temperature }.average()
+    val maxWind = forecasts.maxOf { it.windSpeed }
+    val maxRain = forecasts.maxOf { it.precipitationProbability }
+    val avgHumidity = forecasts.map { it.humidity }.average().toInt()
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
@@ -593,17 +606,17 @@ private fun WeatherDetailGrid(
         ) {
             DetailItem(
                 modifier = Modifier.weight(1f),
-                emoji    = "💨",
-                label    = "풍속",
-                value    = "${windSpeed}m/s",
-                sub      = "$dirKor (${windDir}°)"
+                emoji    = "🌡",
+                label    = "평균 기온",
+                value    = "${avgTemp.toInt()}°C",
+                sub      = "라운드 중 평균"
             )
             DetailItem(
                 modifier = Modifier.weight(1f),
-                emoji    = "💧",
-                label    = "습도",
-                value    = "${humidity}%",
-                sub      = "상대습도"
+                emoji    = "💨",
+                label    = "최대 풍속",
+                value    = "${maxWind}m/s",
+                sub      = if (maxWind < 5f) "약풍" else if (maxWind < 10f) "보통" else "강풍 주의"
             )
         }
         Row(
@@ -612,13 +625,22 @@ private fun WeatherDetailGrid(
         ) {
             DetailItem(
                 modifier = Modifier.weight(1f),
-                emoji    = "🌧",
+                emoji    = "☔",
                 label    = "강수확률",
-                value    = "${rain}%",
-                sub      = if (rain < 30) "우산 불필요" else "우산 챙기세요"
+                value    = "${maxRain}%",
+                sub      = if (maxRain < 30) "우산 불필요" else "우산 챙기세요"
             )
             DetailItem(
                 modifier = Modifier.weight(1f),
+                emoji    = "💧",
+                label    = "평균 습도",
+                value    = "${avgHumidity}%",
+                sub      = "상대 습도"
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            DetailItem(
+                modifier = Modifier.fillMaxWidth(),
                 emoji    = "⏱",
                 label    = "라운드 시간",
                 value    = "",
@@ -645,65 +667,73 @@ private fun DetailItem(
         Column(modifier = Modifier.padding(14.dp)) {
             Text(emoji, fontSize = 20.sp)
             Spacer(Modifier.height(4.dp))
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (value.isNotEmpty()) {
-                Text(
-                    value,
-                    fontSize   = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color      = MaterialTheme.colorScheme.onSurface
-                )
+                Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             }
-            Text(
-                sub,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
-// ── 중기 오전/오후 카드 ───────────────────────────────────────────────────────
+// ── 라운드 적합도 카드 ────────────────────────────────────────────────────────
 @Composable
-private fun MidTermHalfCard(
-    modifier : Modifier,
-    label    : String,
-    emoji    : String,
-    sky      : String,
-    rain     : Int
-) {
+private fun SuitabilityScoreCard(score: Int) {
+    val color     = scoreColor(score)
+    val label     = scoreLabel(score)
+    val animScore by animateFloatAsState(
+        targetValue   = score / 100f,
+        animationSpec = tween(900),
+        label         = "score"
+    )
+
     Card(
-        modifier  = modifier,
-        shape     = RoundedCornerShape(12.dp),
+        modifier  = Modifier.fillMaxWidth(),
+        shape     = RoundedCornerShape(16.dp),
         colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                label,
-                style      = MaterialTheme.typography.labelMedium,
-                color      = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(emoji, fontSize = 32.sp)
-            Text(
-                sky,
-                fontSize   = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color      = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                "강수 $rain%",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF42A5F5)
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        "⛳ 라운드 적합도",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = color)
+                    Text(
+                        "기온 30% · 바람 45% · 강수 25%",
+                        fontSize = 11.sp,
+                        color    = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .background(color.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("$score", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = color)
+                        Text("/ 100", fontSize = 10.sp, color = color.copy(alpha = 0.7f))
+                    }
+                }
+            }
+            LinearProgressIndicator(
+                progress          = { animScore },
+                modifier          = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
+                color             = color,
+                trackColor        = color.copy(alpha = 0.12f),
+                strokeCap         = StrokeCap.Round
             )
         }
     }
@@ -712,12 +742,7 @@ private fun MidTermHalfCard(
 // ── 섹션 타이틀 ──────────────────────────────────────────────────────────────
 @Composable
 private fun SectionTitle(text: String) {
-    Text(
-        text       = text,
-        fontSize   = 15.sp,
-        fontWeight = FontWeight.SemiBold,
-        color      = MaterialTheme.colorScheme.onSurface
-    )
+    Text(text = text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
 }
 
 // ── 범위 초과 ─────────────────────────────────────────────────────────────────
@@ -728,38 +753,23 @@ private fun OutOfRangeContent(onBack: () -> Unit) {
             .fillMaxSize()
             .background(Brush.linearGradient(listOf(Color(0xFF546E7A), Color(0xFF37474F))))
     ) {
-        IconButton(
-            onClick  = onBack,
-            modifier = Modifier.padding(12.dp)
-        ) {
+        IconButton(onClick = onBack, modifier = Modifier.padding(12.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White)
         }
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
+            modifier = Modifier.fillMaxSize().padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                Icons.Default.EventBusy,
-                null,
-                modifier = Modifier.size(72.dp),
-                tint     = Color.White.copy(alpha = 0.80f)
-            )
+            Icon(Icons.Default.EventBusy, null, modifier = Modifier.size(72.dp), tint = Color.White.copy(alpha = 0.80f))
             Spacer(Modifier.height(16.dp))
-            Text(
-                "예보 불가",
-                fontSize   = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color      = Color.White
-            )
+            Text("예보 불가", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.height(8.dp))
             Text(
                 "예보는 최대 10일 이내만 제공됩니다.\n날짜를 오늘부터 10일 이내로 선택해주세요.",
-                style     = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
-                color     = Color.White.copy(alpha = 0.75f)
+                color = Color.White.copy(alpha = 0.75f)
             )
         }
     }
@@ -768,58 +778,31 @@ private fun OutOfRangeContent(onBack: () -> Unit) {
 // ── 오류 ─────────────────────────────────────────────────────────────────────
 @Composable
 private fun ErrorContent(
-    message  : String,
-    onBack   : () -> Unit,
-    onRetry  : () -> Unit
+    message : String,
+    onBack  : () -> Unit,
+    onRetry : () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Brush.linearGradient(listOf(Color(0xFF1A237E), Color(0xFF0D47A1))))
     ) {
-        IconButton(
-            onClick  = onBack,
-            modifier = Modifier.padding(12.dp)
-        ) {
+        IconButton(onClick = onBack, modifier = Modifier.padding(12.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White)
         }
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
+            modifier = Modifier.fillMaxSize().padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                Icons.Default.ErrorOutline,
-                null,
-                modifier = Modifier.size(72.dp),
-                tint     = Color.White.copy(alpha = 0.80f)
-            )
+            Icon(Icons.Default.ErrorOutline, null, modifier = Modifier.size(72.dp), tint = Color.White.copy(alpha = 0.80f))
             Spacer(Modifier.height(16.dp))
-            Text(
-                "날씨 정보를 불러올 수 없습니다",
-                fontSize   = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color      = Color.White
-            )
+            Text("날씨 정보를 불러올 수 없습니다", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.height(8.dp))
-            Text(
-                message,
-                style     = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                color     = Color.White.copy(alpha = 0.75f)
-            )
+            Text(message, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, color = Color.White.copy(alpha = 0.75f))
             Spacer(Modifier.height(28.dp))
-            Button(
-                onClick = onRetry,
-                colors  = ButtonDefaults.buttonColors(containerColor = Color.White)
-            ) {
-                Icon(
-                    Icons.Default.Refresh,
-                    null,
-                    tint = Color(0xFF1A237E)
-                )
+            Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = Color.White)) {
+                Icon(Icons.Default.Refresh, null, tint = Color(0xFF1A237E))
                 Spacer(Modifier.width(6.dp))
                 Text("다시 시도", color = Color(0xFF1A237E), fontWeight = FontWeight.Bold)
             }

@@ -27,6 +27,7 @@ sealed class WeatherUiState {
     data class MidTermSuccess(
         val schedule: TeeOffSchedule,
         val dayForecast: MidTermForecast?,
+        val hourlyForecasts: List<WeatherForecast> = emptyList(),  // 시간별 추가
         val suitabilityScore: Int = 0
     ) : WeatherUiState()
     data object OutOfRange : WeatherUiState()
@@ -50,16 +51,21 @@ class WeatherViewModel @Inject constructor(
                     when (result) {
                         is GetWeatherForecastUseCase.WeatherResult.ShortTerm ->
                             WeatherUiState.ShortTermSuccess(
-                                schedule = schedule,
-                                hourlyForecasts = result.hourlyForecasts,
+                                schedule         = schedule,
+                                hourlyForecasts  = result.hourlyForecasts,
                                 suitabilityScore = calculateShortTermSuitability(result.hourlyForecasts)
                             )
 
                         is GetWeatherForecastUseCase.WeatherResult.MidTerm ->
                             WeatherUiState.MidTermSuccess(
-                                schedule = schedule,
-                                dayForecast = result.dailyForecast,
-                                suitabilityScore = calculateMidTermSuitability(result.dailyForecast)
+                                schedule         = schedule,
+                                dayForecast      = result.dailyForecast,
+                                hourlyForecasts  = result.hourlyForecasts,
+                                // 시간별 데이터가 있으면 단기와 동일한 계산, 없으면 일별 계산
+                                suitabilityScore = if (result.hourlyForecasts.isNotEmpty())
+                                    calculateShortTermSuitability(result.hourlyForecasts)
+                                else
+                                    calculateMidTermSuitability(result.dailyForecast)
                             )
 
                         is GetWeatherForecastUseCase.WeatherResult.OutOfRange ->
@@ -82,14 +88,14 @@ class WeatherViewModel @Inject constructor(
 
     fun retry(schedule: TeeOffSchedule) = loadWeather(schedule)
 
-    // ── 라운드 적합도 계산 (단기: 시간별) ─────────────────────────────────────
+    // ── 라운드 적합도 계산 (시간별 데이터 기준) ───────────────────────────────
 
     private fun calculateShortTermSuitability(forecasts: List<WeatherForecast>): Int {
         if (forecasts.isEmpty()) return 0
 
-        val avgTemp  = forecasts.map { it.temperature.toDouble() }.average()
-        val maxWind  = forecasts.maxOf { it.windSpeed }
-        val maxRain  = forecasts.maxOf { it.precipitationProbability }
+        val avgTemp = forecasts.map { it.temperature.toDouble() }.average()
+        val maxWind = forecasts.maxOf { it.windSpeed }
+        val maxRain = forecasts.maxOf { it.precipitationProbability }
 
         val tempScore: Int = when {
             avgTemp < 0   -> 10
@@ -121,7 +127,7 @@ class WeatherViewModel @Inject constructor(
             .toInt().coerceIn(0, 100)
     }
 
-    // ── 라운드 적합도 계산 (중기: 일별) ──────────────────────────────────────
+    // ── 라운드 적합도 계산 (중기 일별 — 시간별 없을 때 fallback) ──────────────
 
     private fun calculateMidTermSuitability(forecast: MidTermForecast?): Int {
         if (forecast == null) return 0

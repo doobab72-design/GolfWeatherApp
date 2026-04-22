@@ -62,7 +62,7 @@ class WeatherRepository @Inject constructor(
     }
 
     /**
-     * 중기예보 조회 (4~10일)
+     * 중기예보 조회 (4~10일) — 일별 데이터
      * Open-Meteo daily 데이터에서 해당 날짜 추출
      */
     suspend fun getMidTermForecast(
@@ -90,6 +90,39 @@ class WeatherRepository @Inject constructor(
         }
     }
 
+    /**
+     * 중기예보 시간별 조회 — 단기와 동일한 파싱, forecastDays만 더 크게
+     */
+    suspend fun getMidTermHourlyForecast(
+        latitude: Double,
+        longitude: Double,
+        targetDate: LocalDate,
+        targetTime: LocalTime
+    ): Result<List<WeatherForecast>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val daysNeeded = (java.time.temporal.ChronoUnit.DAYS
+                .between(LocalDate.now(), targetDate) + 1)
+                .toInt().coerceIn(4, 16)
+
+            Log.d(TAG, "중기 시간별 요청: lat=$latitude lon=$longitude date=$targetDate forecastDays=$daysNeeded")
+
+            val response = openMeteoApi.getForecast(
+                latitude = latitude,
+                longitude = longitude,
+                hourly = HOURLY_PARAMS,
+                timezone = "Asia/Seoul",
+                forecastDays = daysNeeded
+            )
+
+            val hourly = response.hourly
+                ?: error("시간별 예보 데이터가 없습니다.")
+
+            Log.d(TAG, "중기 시간별 응답: ${hourly.time.size}개")
+
+            parseHourlyForecast(hourly, targetDate, targetTime)
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Parsing helpers
     // ──────────────────────────────────────────────────────────────────────────
@@ -104,8 +137,9 @@ class WeatherRepository @Inject constructor(
         targetTime: LocalTime
     ): List<WeatherForecast> {
         val targetDateStr = targetDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-        val startHour = targetTime.hour
-        val endHour = (startHour + 4).coerceAtMost(23)
+        // 티오프 3시간 전 ~ 라운드 종료(4시간 30분) 후 3시간 = 약 10~11시간 범위
+        val startHour = (targetTime.hour - 3).coerceAtLeast(0)
+        val endHour   = (targetTime.hour + 8).coerceAtMost(23)  // 4.5h 라운드 + 3h 여유
 
         val forecasts = mutableListOf<WeatherForecast>()
 

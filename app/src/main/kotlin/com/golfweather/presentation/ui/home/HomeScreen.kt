@@ -1,6 +1,5 @@
 package com.golfweather.presentation.ui.home
 
-import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,12 +54,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.golfweather.presentation.ui.components.GolfCourseSearchSheet
+import com.golfweather.presentation.ui.components.WheelTimePickerSheet
 import com.golfweather.presentation.viewmodel.HomeViewModel
 import com.golfweather.presentation.viewmodel.SharedGolfCourseViewModel
 import java.time.Instant
@@ -85,14 +84,23 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
     var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
             viewModel.clearError()
         }
+    }
+
+    // ── 시간 선택 드럼롤 BottomSheet ─────────────────────────────────────────
+    if (showTimePicker) {
+        WheelTimePickerSheet(
+            initialTime    = uiState.selectedTime,
+            onTimeSelected = viewModel::onTimeSelected,
+            onDismiss      = { showTimePicker = false }
+        )
     }
 
     // ── 골프장 검색 BottomSheet ──────────────────────────────────────────────
@@ -369,25 +377,13 @@ fun HomeScreen(
                             onClick   = { showDatePicker = true }
                         )
                         DateTimeCard(
-                            modifier  = Modifier.weight(1f),
-                            icon      = Icons.Default.AccessTime,
-                            label     = "티오프 시간",
-                            value     = uiState.selectedTime.format(
+                            modifier = Modifier.weight(1f),
+                            icon     = Icons.Default.AccessTime,
+                            label    = "티오프 시간",
+                            value    = uiState.selectedTime.format(
                                 DateTimeFormatter.ofPattern("HH:mm")
                             ),
-                            onClick   = {
-                                TimePickerDialog(
-                                    context,
-                                    { _, hour, minute ->
-                                        viewModel.onTimeSelected(
-                                            java.time.LocalTime.of(hour, minute)
-                                        )
-                                    },
-                                    uiState.selectedTime.hour,
-                                    uiState.selectedTime.minute,
-                                    true
-                                ).show()
-                            }
+                            onClick  = { showTimePicker = true }
                         )
                     }
 
