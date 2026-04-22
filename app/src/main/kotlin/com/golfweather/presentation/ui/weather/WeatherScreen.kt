@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Opacity
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.WaterDrop
@@ -110,16 +111,20 @@ private fun scoreLabel(score: Int): String = when {
 
 @Composable
 fun WeatherScreen(
-    sharedViewModel: SharedGolfCourseViewModel,
-    onBack: () -> Unit,
-    viewModel: WeatherViewModel = hiltViewModel()
+    sharedViewModel   : SharedGolfCourseViewModel,
+    onBack            : () -> Unit,
+    onNavigateToRadar : () -> Unit,
+    viewModel         : WeatherViewModel = hiltViewModel()
 ) {
-    val uiState  by viewModel.uiState.collectAsState()
-    val schedule by sharedViewModel.schedule.collectAsState()
+    val uiState      by viewModel.uiState.collectAsState()
+    val schedule     by sharedViewModel.schedule.collectAsState()
+    val lastUpdated  by viewModel.lastUpdatedAt.collectAsState()
 
     LaunchedEffect(schedule) {
         schedule?.let { viewModel.loadWeather(it) }
     }
+
+    val onRefresh: () -> Unit = { schedule?.let { viewModel.refresh(it) } }
 
     when (val state = uiState) {
         is WeatherUiState.Idle    -> LoadingOverlay(onBack)
@@ -127,18 +132,24 @@ fun WeatherScreen(
 
         is WeatherUiState.ShortTermSuccess ->
             ShortTermWeatherContent(
-                schedule  = state.schedule,
-                forecasts = state.hourlyForecasts,
-                score     = state.suitabilityScore,
-                onBack    = onBack
+                schedule          = state.schedule,
+                forecasts         = state.hourlyForecasts,
+                score             = state.suitabilityScore,
+                lastUpdated       = lastUpdated,
+                onBack            = onBack,
+                onRefresh         = onRefresh,
+                onNavigateToRadar = onNavigateToRadar
             )
 
         is WeatherUiState.MidTermSuccess ->
             MidTermWeatherContent(
-                schedule = state.schedule,
-                forecast = state.dayForecast,
-                score    = state.suitabilityScore,
-                onBack   = onBack
+                schedule          = state.schedule,
+                forecast          = state.dayForecast,
+                score             = state.suitabilityScore,
+                lastUpdated       = lastUpdated,
+                onBack            = onBack,
+                onRefresh         = onRefresh,
+                onNavigateToRadar = onNavigateToRadar
             )
 
         is WeatherUiState.OutOfRange ->
@@ -183,15 +194,22 @@ private fun LoadingOverlay(onBack: () -> Unit) {
 // ── 단기 예보 화면 ────────────────────────────────────────────────────────────
 @Composable
 private fun ShortTermWeatherContent(
-    schedule  : TeeOffSchedule,
-    forecasts : List<WeatherForecast>,
-    score     : Int,
-    onBack    : () -> Unit
+    schedule          : TeeOffSchedule,
+    forecasts         : List<WeatherForecast>,
+    score             : Int,
+    lastUpdated       : String,
+    onBack            : () -> Unit,
+    onRefresh         : () -> Unit,
+    onNavigateToRadar : () -> Unit
 ) {
     val dominantSky = forecasts.maxByOrNull { 1 }?.skyCondition ?: SkyCondition.CLEAR
     val avgTemp     = if (forecasts.isEmpty()) 0f
                       else forecasts.map { it.temperature }.average().toFloat()
     val dateFmt     = DateTimeFormatter.ofPattern("MM/dd (E)")
+
+    // 티오프 ~ 종료 시간 하이라이트 범위
+    val teeOffHour  = schedule.time.hour
+    val roundEndHour = minOf(teeOffHour + 5, 23)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -206,12 +224,26 @@ private fun ShortTermWeatherContent(
                     .height(280.dp)
                     .background(skyGradient(dominantSky))
             ) {
-                // 뒤로가기
+                // 뒤로가기 (좌상단)
                 IconButton(
                     onClick  = onBack,
                     modifier = Modifier.padding(top = 8.dp, start = 4.dp)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White)
+                }
+
+                // 우상단 액션 버튼 (레이더 + 새로고침)
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 4.dp)
+                ) {
+                    IconButton(onClick = onNavigateToRadar) {
+                        Icon(Icons.Default.Radar, "레이더", tint = Color.White)
+                    }
+                    IconButton(onClick = onRefresh) {
+                        Icon(Icons.Default.Refresh, "새로고침", tint = Color.White)
+                    }
                 }
 
                 // 장식 원
@@ -271,41 +303,64 @@ private fun ShortTermWeatherContent(
                         .padding(top = 24.dp, start = 20.dp, end = 20.dp, bottom = 40.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    // 단기 배지
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = Color(0xFF0288D1).copy(alpha = 0.12f)
+                    // 단기 배지 + 마지막 업데이트
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "📅 단기예보 (3일 이내)",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                            fontSize  = 12.sp,
-                            color     = Color(0xFF0277BD),
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = Color(0xFF0288D1).copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                "📅 단기예보 (3일 이내)",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                fontSize  = 12.sp,
+                                color     = Color(0xFF0277BD),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (lastUpdated.isNotEmpty()) {
+                            Text(
+                                "업데이트: $lastUpdated",
+                                fontSize = 11.sp,
+                                color    = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
                     // 라운드 적합도
                     SuitabilityScoreCard(score = score)
 
-                    // 시간별 예보
+                    // 시간별 예보 (하루 전체 타임라인)
                     if (forecasts.isNotEmpty()) {
-                        SectionTitle("시간별 예보")
+                        SectionTitle("시간별 예보 (하루 종일)")
+                        Text(
+                            "파란색 테두리: 티오프 ${teeOffHour}시 ~ ${roundEndHour}시 (라운드 구간)",
+                            fontSize = 11.sp,
+                            color    = Color(0xFF1565C0).copy(alpha = 0.75f)
+                        )
                         LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding        = PaddingValues(horizontal = 0.dp)
                         ) {
                             items(forecasts) { forecast ->
-                                HourlyWeatherCard(forecast = forecast)
+                                val hour = forecast.dateTime
+                                    .substring(8, 10).toIntOrNull() ?: 0
+                                HourlyWeatherCard(
+                                    forecast      = forecast,
+                                    isHighlighted = hour in teeOffHour..roundEndHour
+                                )
                             }
                         }
                     } else {
                         Text(
                             "해당 시간대 예보 데이터가 없습니다.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style     = MaterialTheme.typography.bodyMedium,
+                            color     = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier
+                            modifier  = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 16.dp)
                         )
@@ -325,7 +380,6 @@ private fun ShortTermWeatherContent(
                     }
                 }
             }
-            // offset(-24dp) 보정
             Spacer(Modifier.height(0.dp))
         }
     }
@@ -334,10 +388,13 @@ private fun ShortTermWeatherContent(
 // ── 중기 예보 화면 ────────────────────────────────────────────────────────────
 @Composable
 private fun MidTermWeatherContent(
-    schedule : TeeOffSchedule,
-    forecast : MidTermForecast?,
-    score    : Int,
-    onBack   : () -> Unit
+    schedule          : TeeOffSchedule,
+    forecast          : MidTermForecast?,
+    score             : Int,
+    lastUpdated       : String,
+    onBack            : () -> Unit,
+    onRefresh         : () -> Unit,
+    onNavigateToRadar : () -> Unit
 ) {
     val sky     = forecast?.skyConditionAm ?: SkyCondition.CLOUDY
     val dateFmt = DateTimeFormatter.ofPattern("MM/dd (E)")
@@ -361,6 +418,21 @@ private fun MidTermWeatherContent(
                 ) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White)
                 }
+
+                // 우상단 액션 버튼
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 4.dp)
+                ) {
+                    IconButton(onClick = onNavigateToRadar) {
+                        Icon(Icons.Default.Radar, "레이더", tint = Color.White)
+                    }
+                    IconButton(onClick = onRefresh) {
+                        Icon(Icons.Default.Refresh, "새로고침", tint = Color.White)
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .size(180.dp)
@@ -422,17 +494,31 @@ private fun MidTermWeatherContent(
                         .padding(top = 24.dp, start = 20.dp, end = 20.dp, bottom = 40.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = Color(0xFF546E7A).copy(alpha = 0.12f)
+                    // 중기 배지 + 마지막 업데이트
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "🗓 중기예보 (4~10일)",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                            fontSize  = 12.sp,
-                            color     = Color(0xFF37474F),
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = Color(0xFF546E7A).copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                "🗓 중기예보 (4~10일)",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                fontSize  = 12.sp,
+                                color     = Color(0xFF37474F),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (lastUpdated.isNotEmpty()) {
+                            Text(
+                                "업데이트: $lastUpdated",
+                                fontSize = 11.sp,
+                                color    = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
                     // 라운드 적합도
@@ -545,7 +631,6 @@ private fun SuitabilityScoreCard(score: Int) {
                         color      = color
                     )
                 }
-                // 점수 서클
                 Box(
                     modifier = Modifier
                         .size(64.dp)
@@ -560,7 +645,6 @@ private fun SuitabilityScoreCard(score: Int) {
                     )
                 }
             }
-            // 진행 바
             LinearProgressIndicator(
                 progress          = { animScore },
                 modifier          = Modifier

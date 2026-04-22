@@ -9,12 +9,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.golfweather.presentation.ui.home.HomeScreen
+import com.golfweather.presentation.ui.weather.RadarScreen
 import com.golfweather.presentation.ui.weather.WeatherScreen
 import com.golfweather.presentation.viewmodel.SharedGolfCourseViewModel
 
 object Routes {
-    const val HOME = "home"
+    const val HOME    = "home"
     const val WEATHER = "weather"
+    const val RADAR   = "radar"
 }
 
 @Composable
@@ -26,12 +28,12 @@ fun AppNavGraph(
     val sharedViewModel: SharedGolfCourseViewModel = hiltViewModel(activity)
 
     NavHost(
-        navController = navController,
+        navController    = navController,
         startDestination = Routes.HOME
     ) {
         composable(Routes.HOME) {
             HomeScreen(
-                sharedViewModel = sharedViewModel,
+                sharedViewModel     = sharedViewModel,
                 onNavigateToWeather = {
                     navController.navigate(Routes.WEATHER)
                 }
@@ -40,7 +42,14 @@ fun AppNavGraph(
 
         composable(Routes.WEATHER) {
             WeatherScreen(
-                sharedViewModel = sharedViewModel,
+                sharedViewModel   = sharedViewModel,
+                onBack            = { navController.popBackStack() },
+                onNavigateToRadar = { navController.navigate(Routes.RADAR) }
+            )
+        }
+
+        composable(Routes.RADAR) {
+            RadarScreen(
                 onBack = { navController.popBackStack() }
             )
         }

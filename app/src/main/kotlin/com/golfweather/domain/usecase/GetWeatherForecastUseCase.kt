@@ -27,8 +27,7 @@ class GetWeatherForecastUseCase @Inject constructor(
                 weatherRepository.getShortTermForecast(
                     latitude = schedule.golfCourse.latitude,
                     longitude = schedule.golfCourse.longitude,
-                    targetDate = schedule.date,
-                    targetTime = schedule.time
+                    targetDate = schedule.date
                 ).fold(
                     onSuccess = { WeatherResult.ShortTerm(it) },
                     onFailure = { WeatherResult.Error(it.message ?: "날씨 정보를 불러올 수 없습니다.") }
