@@ -39,9 +39,20 @@ android {
         buildConfigField("String", "KMA_API_KEY", "\"${localProp("KMA_API_KEY")}\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile     = rootProject.file("golfweather-release.jks")
+            storePassword = localProps.getProperty("KEYSTORE_PASSWORD", "golfweather2024")
+            keyAlias      = localProps.getProperty("KEY_ALIAS",         "golfweather")
+            keyPassword   = localProps.getProperty("KEY_PASSWORD",      "golfweather2024")
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled   = true
+            isShrinkResources = true
+            signingConfig     = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
