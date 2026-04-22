@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 sealed class WeatherUiState {
@@ -41,11 +43,31 @@ class WeatherViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<WeatherUiState>(WeatherUiState.Idle)
     val uiState: StateFlow<WeatherUiState> = _uiState.asStateFlow()
 
+    private val _lastUpdatedAt = MutableStateFlow("")
+    val lastUpdatedAt: StateFlow<String> = _lastUpdatedAt.asStateFlow()
+
+    private var hasLoaded = false
+
+    /** 처음 진입 시 1회 자동 로딩, 이후 재진입 시 기존 데이터 유지 */
     fun loadWeather(schedule: TeeOffSchedule) {
+        if (hasLoaded) return
+        fetchWeather(schedule)
+    }
+
+    /** 수동 새로고침 — hasLoaded 여부와 무관하게 항상 재요청 */
+    fun refresh(schedule: TeeOffSchedule) = fetchWeather(schedule)
+
+    fun retry(schedule: TeeOffSchedule) = fetchWeather(schedule)
+
+    private fun fetchWeather(schedule: TeeOffSchedule) {
         viewModelScope.launch {
             _uiState.update { WeatherUiState.Loading }
             try {
                 val result = getWeatherForecastUseCase(schedule)
+                hasLoaded = true
+                _lastUpdatedAt.update {
+                    LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+                }
                 _uiState.update {
                     when (result) {
                         is GetWeatherForecastUseCase.WeatherResult.ShortTerm ->
@@ -72,15 +94,13 @@ class WeatherViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                android.util.Log.e("WeatherViewModel", "loadWeather 예외", e)
+                android.util.Log.e("WeatherViewModel", "fetchWeather 예외", e)
                 _uiState.update {
                     WeatherUiState.Error(e.message ?: "알 수 없는 오류가 발생했습니다.")
                 }
             }
         }
     }
-
-    fun retry(schedule: TeeOffSchedule) = loadWeather(schedule)
 
     // ── 라운드 적합도 계산 (단기: 시간별) ─────────────────────────────────────
 

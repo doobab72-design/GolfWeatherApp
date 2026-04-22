@@ -10,7 +10,6 @@ import com.golfweather.data.model.WeatherForecast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,8 +37,7 @@ class WeatherRepository @Inject constructor(
     suspend fun getShortTermForecast(
         latitude: Double,
         longitude: Double,
-        targetDate: LocalDate,
-        targetTime: LocalTime
+        targetDate: LocalDate
     ): Result<List<WeatherForecast>> = withContext(Dispatchers.IO) {
         runCatching {
             Log.d(TAG, "단기예보 요청 (Open-Meteo): lat=$latitude lon=$longitude date=$targetDate")
@@ -57,7 +55,7 @@ class WeatherRepository @Inject constructor(
 
             Log.d(TAG, "단기예보 응답: ${hourly.time.size}개 시간대")
 
-            parseHourlyForecast(hourly, targetDate, targetTime)
+            parseHourlyForecast(hourly, targetDate)
         }
     }
 
@@ -96,25 +94,18 @@ class WeatherRepository @Inject constructor(
 
     /**
      * Open-Meteo hourly → WeatherForecast 변환
-     * 티오프 시각부터 4시간 구간만 필터링
+     * 해당 날짜의 전체 24시간 데이터 반환
      */
     private fun parseHourlyForecast(
         hourly: OpenMeteoHourly,
-        targetDate: LocalDate,
-        targetTime: LocalTime
+        targetDate: LocalDate
     ): List<WeatherForecast> {
         val targetDateStr = targetDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-        val startHour = targetTime.hour
-        val endHour = (startHour + 4).coerceAtMost(23)
-
         val forecasts = mutableListOf<WeatherForecast>()
 
         hourly.time.forEachIndexed { i, timeStr ->
             // "2026-04-21T07:00" 형식 파싱
             if (!timeStr.startsWith(targetDateStr)) return@forEachIndexed
-
-            val hour = timeStr.substringAfter("T").substringBefore(":").toIntOrNull() ?: return@forEachIndexed
-            if (hour < startHour || hour > endHour) return@forEachIndexed
 
             val wmoCode = hourly.weathercode.getOrNull(i)
             // "yyyy-MM-ddTHH:mm" → "yyyyMMddHHmm"
@@ -134,7 +125,7 @@ class WeatherRepository @Inject constructor(
             )
         }
 
-        Log.d(TAG, "단기예보 파싱: ${forecasts.size}건")
+        Log.d(TAG, "단기예보 파싱: ${forecasts.size}건 (하루 전체)")
         return forecasts
     }
 

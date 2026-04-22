@@ -1,6 +1,7 @@
 package com.golfweather.presentation.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -32,10 +33,13 @@ private fun SkyCondition.emoji(): String = when (this) {
     SkyCondition.RAIN_SNOW     -> "🌨️"
 }
 
+private val HighlightBlue = Color(0xFF1565C0)
+
 @Composable
 fun HourlyWeatherCard(
-    forecast : WeatherForecast,
-    modifier : Modifier = Modifier
+    forecast      : WeatherForecast,
+    isHighlighted : Boolean = false,
+    modifier      : Modifier = Modifier
 ) {
     // "yyyyMMddHHmm" → "HH:mm"
     val timeStr = forecast.dateTime.let {
@@ -44,13 +48,24 @@ fun HourlyWeatherCard(
 
     val isHighRain = forecast.precipitationProbability >= 40
 
+    val cardModifier = if (isHighlighted) {
+        modifier
+            .width(90.dp)
+            .border(2.dp, HighlightBlue, RoundedCornerShape(14.dp))
+    } else {
+        modifier.width(90.dp)
+    }
+
     Card(
-        modifier  = modifier.width(90.dp),
+        modifier  = cardModifier,
         shape     = RoundedCornerShape(14.dp),
         colors    = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isHighlighted)
+                HighlightBlue.copy(alpha = 0.10f)
+            else
+                MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isHighlighted) 5.dp else 3.dp)
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
@@ -62,7 +77,8 @@ fun HourlyWeatherCard(
                 text      = timeStr,
                 fontSize  = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color     = MaterialTheme.colorScheme.onSurfaceVariant
+                color     = if (isHighlighted) HighlightBlue
+                            else MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(Modifier.height(2.dp))
